@@ -55,6 +55,8 @@ for stock in tickers["Ticker"]:
     else:
         dividends
 
+# need to populate df such that I capture dates and payments for every stock in the tickers dataframe.
+# need to come up with a way to also track stocks that dont have a dividend payment
 
 ```
 

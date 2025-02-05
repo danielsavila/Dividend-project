@@ -1,0 +1,60 @@
+---
+title: "Dividend Project"
+format: html
+---
+
+```{python}
+'''
+This is a personal project that is designed to showcase skills in data science.
+I am interested in applying some of the models from class; specifically 
+logit models, lasso models, and a classification method utilizing LDA. 
+
+The goal is to be able to build a model that predicts whether a company will
+issue dividends in the next quarter using previous financial data.
+'''
+```
+
+```{python}
+import yfinance as yf
+import os
+import pandas as pd
+import numpy as np
+from bs4 import BeautifulSoup
+import requests
+from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import Lasso
+from sklearn.linear_model import LinearRegression
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+
+os.chdir("C:/Users/AVILA/OneDrive/Documents/GitHub/Dividend-project")
+
+
+```
+
+```{python}
+# grabbed list of Russel 2000 companies from iShares IWM ticker
+# link: https://www.ishares.com/us/products/239710/ishares-russell-2000-etf
+# had to turn the file into xls in Excel, downloaded as an xml
+# accessed 2-5-2025
+
+tickers = pd.read_excel("iShares-Russell-2000-ETF_fund.xls", sheet_name = "Holdings", engine = "xlrd")
+tickers.columns = tickers.loc[6, :]
+tickers = tickers.loc[7:, :].reset_index().drop("index", axis = 1)
+tickers = tickers[tickers["Asset Class"] == "Equity"]
+tickers = tickers[tickers["Sector"] != "Cash and/or Derivatives"]
+tickers = tickers[tickers["Ticker"] != "--"].drop_duplicates()
+
+df = pd.DataFrame()
+for stock in tickers["Ticker"]:
+    equity = yf.Ticker(stock)
+    dividends = equity.get_dividends()
+    if dividends.empty:
+        dividends = 0
+    else:
+        dividends
+
+
+```
+

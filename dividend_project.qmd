@@ -19,11 +19,8 @@ import yfinance as yf
 import os
 import pandas as pd
 import numpy as np
-from bs4 import BeautifulSoup
 import requests
-from sklearn.linear_model import LogisticRegression
-from sklearn.linear_model import Lasso
-from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import LogisticRegression, Lasso, LinearRegression
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
@@ -46,17 +43,80 @@ tickers = tickers[tickers["Asset Class"] == "Equity"]
 tickers = tickers[tickers["Sector"] != "Cash and/or Derivatives"]
 tickers = tickers[tickers["Ticker"] != "--"].drop_duplicates()
 
+#found a ticker that was delisted, removed it here.
+tickers = tickers.drop(75, axis = 0)
+
+
+#this is then grabbing dividend data from yfinance using the list of tickers in the previous code block
+#for stocks that do not issue a dividend, then they are marked as zero and have only one entry
 df = pd.DataFrame()
 for stock in tickers["Ticker"]:
     equity = yf.Ticker(stock)
-    dividends = equity.get_dividends()
-    if dividends.empty:
-        dividends = 0
-    else:
-        dividends
+    dividends = pd.DataFrame(equity.get_dividends()).reset_index()
+    dividends["ticker"] = stock
 
-# need to populate df such that I capture dates and payments for every stock in the tickers dataframe.
-# need to come up with a way to also track stocks that dont have a dividend payment
+    if dividends.empty:
+        dividends = pd.DataFrame({"Date": [0], "Dividends": [0], "ticker":[stock]})
+        df = pd.concat([df, dividends])
+    else:
+        dividends["Dividends"] = round(dividends["Dividends"], 3)
+        df = pd.concat([df, dividends])
+```
+
+
+```{python}
+print(len(df["ticker"].unique()))
+print(df.shape)
+```
+
+```{python}
+annual_income = pd.DataFrame()
+
+for stock in tickers["Ticker"].unique():
+    equity = yf.Ticker(stock)
+    annual_stmnt = pd.DataFrame(equity.get_income_stmt(freq = "yearly"))
+    annual_stmnt = annual_stmnt.T
+    annual_stmnt["ticker"] = stock
+    annual_income = pd.concat([annual_income, annual_stmnt])
+
+annual_income.head()
+```
+
+```{python}
+balance_sheet = pd.DataFrame()
+
+for stock in tickers.loc[:5, "Ticker"].unique():
+    equity = yf.Ticker(stock)
+    balance_sheet_data = pd.DataFrame(equity.get_balance_sheet)
+    balance_sheet_data["ticker"] = stock
+    balance_sheet = pd.concat([balance_sheet, balance_sheet_data])
 
 ```
 
+The resulting dataframe is missing 40 stocks from the Index as it seems that these were delisted. Additionallly, we
+are working with ~60k observations. 
+
+At this point, we have two dataframes, one (tickers) which contains a single observation about companies that are in the Russel 2000.
+
+and df, which contains all of the dividend information of companies that issue a dividend, and blank charactaristics for those that do not. 
+
+couple routes I could go here.
+
+1) what I need is data that captures both pre and post dividend
+    so that would mean that for stocks that did issue a dividend, I would need data from before and after the dividend.
+2) for stocks that dont issue a dividend, I would just need their financial information through time. 
+
+If I want to just do prediction, 
+
+So basically i would have to grab the last 10 years of quarterly income statements for each stock
+and the quarterly balance sheets for the last 10 years
+and the quarterly cash flow statements for the last 10 years. 
+
+Then I would want to merge that information with the dividend information.
+
+I would then need to create a binary that indicates when the stock issued the dividend for the first time
+
+and then i would need to create a seperate binary that indicates if the stock issued a dividend that quarter
+
+
+then we could do the logit, and the discriminant analysis.

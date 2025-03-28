@@ -25,7 +25,7 @@ from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 
-os.chdir("C:/Users/AVILA/OneDrive/Documents/GitHub/Dividend-project")
+os.chdir("C:/Users/danie/Documents/Github/Dividend-project")
 
 
 ```
@@ -36,7 +36,7 @@ os.chdir("C:/Users/AVILA/OneDrive/Documents/GitHub/Dividend-project")
 # had to turn the file into xls in Excel, downloaded as an xml
 # accessed 2-5-2025
 
-tickers = pd.read_excel("iShares-Russell-2000-ETF_fund.xls", sheet_name = "Holdings", engine = "xlrd")
+tickers = pd.read_excel("iShares-Russell-2000-ETF_fund.xls", sheet_name = "Holdings")
 tickers.columns = tickers.loc[6, :]
 tickers = tickers.loc[7:, :].reset_index().drop("index", axis = 1)
 tickers = tickers[tickers["Asset Class"] == "Equity"]

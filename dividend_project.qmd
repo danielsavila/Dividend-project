@@ -20,14 +20,23 @@ import os
 import pandas as pd
 import numpy as np
 import requests
-from sklearn.linear_model import LogisticRegression, Lasso, LinearRegression
+from scipy import stats
+import seaborn as sns
+import warnings
+import matplotlib.pyplot as plt
+%matplotlib inline
+from sklearn.linear_model import LogisticRegression, Lasso, LinearRegression, Ridge, LassoLarsIC 
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
+from sklearn.model_selection import train_test_split, GridSearchCV, KFold
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.metrics import accuracy_score, mean_squared_error, roc_curve, RocCurveDisplay, roc_auc_score
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import make_pipeline
 
-os.chdir("C:/Users/danie/Documents/Github/Dividend-project")
 
-
+warnings.filterwarnings("ignore")
+os.chdir("C:/Users/danie/documents/github/dividend-project")
+sns.set_style("darkgrid")
 ```
 
 ```{python}
@@ -36,7 +45,7 @@ os.chdir("C:/Users/danie/Documents/Github/Dividend-project")
 # had to turn the file into xls in Excel, downloaded as an xml
 # accessed 2-5-2025
 
-tickers = pd.read_excel("iShares-Russell-2000-ETF_fund.xls", sheet_name = "Holdings")
+tickers = pd.read_excel("iShares-Russell-2000-ETF_fund.xls", sheet_name = "Holdings", engine = "xlrd")
 tickers.columns = tickers.loc[6, :]
 tickers = tickers.loc[7:, :].reset_index().drop("index", axis = 1)
 tickers = tickers[tickers["Asset Class"] == "Equity"]
@@ -47,7 +56,7 @@ tickers = tickers[tickers["Ticker"] != "--"].drop_duplicates()
 tickers = tickers.drop(75, axis = 0)
 
 
-#this is then grabbing dividend data from yfinance using the list of tickers in the previous code block
+#the following code is grabbing dividend data from yfinance using the list of tickers in the previous code block
 #for stocks that do not issue a dividend, then they are marked as zero and have only one entry
 df = pd.DataFrame()
 for stock in tickers["Ticker"]:
@@ -79,7 +88,12 @@ for stock in tickers["Ticker"].unique():
     annual_stmnt["ticker"] = stock
     annual_income = pd.concat([annual_income, annual_stmnt])
 
+annual_income = annual_income.reset_index()
+annual_income["index"] = pd.to_datetime(annual_income["index"])
 annual_income.head()
+
+#looking at the annual_income dataset, it becomes clear that there is a ton of missingness, especailly in the later columns. I might have to remove those columns, but for now I am going to leave them since I am thinking that a decision tree would be able to handle the nan values. 
+
 ```
 
 ```{python}
@@ -87,10 +101,29 @@ balance_sheet = pd.DataFrame()
 
 for stock in tickers.loc[:5, "Ticker"].unique():
     equity = yf.Ticker(stock)
-    balance_sheet_data = pd.DataFrame(equity.get_balance_sheet)
+    balance_sheet_data = pd.DataFrame(equity.get_balance_sheet(freq = "yearly"))
+    balance_sheet_data = balance_sheet_data.T
     balance_sheet_data["ticker"] = stock
     balance_sheet = pd.concat([balance_sheet, balance_sheet_data])
 
+balance_sheet = balance_sheet.reset_index()
+balance_sheet["index"] = pd.to_datetime(balance_sheet["index"])
+balance_sheet.head()
+
+```
+
+
+```{python}
+insider_transactions = pd.DataFrame()
+
+for stock in tickers.loc[:5, "Ticker"].unique():
+    equity = yf.Ticker(stock)
+    insider_transactions_data = pd.DataFrame(equity.get_insider_transactions())
+    insider_transactions["ticker"] = stock
+    insider_transactions = pd.concat([insider_transactions, insider_transactions_data])
+
+insider_transactions["Text"] = insider_transactions["Text"].apply(str)
+insider_transactions.head()
 ```
 
 The resulting dataframe is missing 40 stocks from the Index as it seems that these were delisted. Additionallly, we
@@ -120,3 +153,77 @@ and then i would need to create a seperate binary that indicates if the stock is
 
 
 then we could do the logit, and the discriminant analysis.
+
+
+looking through the annual_income df, we have quarterly data for all of the equities listed, 2020 - 2024, and even here we have some weird dates
+for the balance sheet df, we only have quarterly data for q4 and q1, 2020 - 2024
+
+so if I wanted, i could merge based on the dates that match, and use that dataset for prediction.
+
+or i could limit to just the data that is on the last day of the year. 
+
+right now, if i do the prediction with this data, then i would be predicting dividend outcomes based on year end income and balance sheet. 
+
+interesting thing about the dividend data, i would have to create columns for each year that are binary for 'if the company issued a dividend within that year'
+
+then the prediction algoritm would have to ask the question of, using the prior years, will the firm issue a dividend in the next year? this is a binary question. and honestly its more of a classification problem...
+
+what happens if i throw everything into the dataset? then i will be predicting whether future events impact past data, which would be wrong. So when I do this, i need to make sure that when doing kfold cross validation, I am breaking the data up so that I am staying linear in a temporal sense.  I wont be able to do that now, but I should be able to do that once I land.
+
+Ok so let me filter down the data in both annual_income and balance_sheet to just the end of year (year-12-31), and then merge on that.
+
+```{python}
+annual_income = annual_income.rename(columns = {"index": "year"})
+annual_income["year"] = annual_income["year"].astype(str)
+balance_sheet = balance_sheet.rename(columns = {"index": "year"})
+balance_sheet["year"] = balance_sheet["year"].astype(str)
+
+for i in range(annual_income.shape[0]):
+    text = annual_income.loc[i, "year"]
+    text = text[0:4]
+    annual_income.loc[i, "year"] = text
+
+for i in range(balance_sheet.shape[0]):
+    text = balance_sheet.loc[i, "year"]
+    text = text[0:4]
+    balance_sheet.loc[i, "year"] = text
+
+#since there is so much missingness, it might make sense to cut down the columns based on how much missingness there is, and then in the columns that have sufficient values, predict whatever values are still missing.
+ai_bs = annual_income.merge(balance_sheet, on = ["year", "ticker"], how = "outer")
+ai_bs.head()
+```
+
+Lets also make the individual columns for the binary years that a dividend was issued.
+
+```{python}
+os.chdir("C:/Users/danie/desktop")
+df = pd.read_csv("ticker_dividends.csv")
+df["Date"] = df["Date"].astype(str)
+df = df.drop("Unnamed: 0", axis = 1)
+
+for i in range(df.shape[0]):
+    text = df.loc[i, "Date"]
+    text = text[0:4]
+    df.loc[i, "Date"] = text
+
+df["year"] = df["Date"]
+df["Date"] = df["Date"].astype(int).replace(0, 3000)
+df = df[df["Date"] >= 2019]
+df = pd.get_dummies(df, columns = ["Date"], dtype = int)
+renamed_columns = {"Date_2019": "2019",
+                   "Date_2020": "2020",
+                   "Date_2021": "2021",
+                   "Date_2022": "2022",
+                   "Date_2023": "2023", 
+                   "Date_2024": "2024",
+                   "Date_2025": "2025",
+                   "Date_3000": "never_dividend"}
+df = df.rename(columns = renamed_columns)
+df.head()
+
+```
+
+```{python}
+ai_bs_df = ai_bs.merge(df, on = ["ticker", "year"], how = "outer")
+ai_bs_df.head()
+```
